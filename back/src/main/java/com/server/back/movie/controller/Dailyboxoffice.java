@@ -16,6 +16,8 @@ import java.net.http.HttpResponse;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.*;
+
 @RestController
 @PropertySource("classpath:config.properties")
 @Api(tags = "일별 박스오피스")
@@ -57,11 +59,21 @@ public class Dailyboxoffice {
         // results 배열 가져오기
         JSONArray results = jsonObject.getJSONArray("results");
 
+        BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(System.out));
         // 특정 인덱스의 영화 데이터 가져오기 (예: 첫 번째 영화)
-        JSONObject firstMovie = results.getJSONObject(0);
+//        JSONObject firstMovie = results.getJSONObject(0);
 
+        for (int i=0; i<results.length(); i++) {
+            bw.write("===========\n");
+            bw.write(String.format("id: %s",results.getJSONObject(i).getInt("id")+"\n"));
+            bw.write(String.format("original_titile: %s",results.getJSONObject(i).getString("title")+"\n"));
+            bw.write(String.format("title: %s",results.getJSONObject(i).getString("title")+"\n"));
+            bw.write(String.format("adult: %s",results.getJSONObject(i).getBoolean("adult")+"\n"));
+            bw.write(String.format("release_date: %s",results.getJSONObject(i).getString("release_date")+"\n"));
+        }
+        bw.flush();
         // 영화의 제목과 평점 출력
-        System.out.println("Title: " + firstMovie.getString("title"));
-        System.out.println("Vote Average: " + firstMovie.getDouble("vote_average"));
+//        System.out.println("Title: " + firstMovie.getString("title"));
+//        System.out.println("Vote Average: " + firstMovie.getDouble("vote_average"));
     }
 }
