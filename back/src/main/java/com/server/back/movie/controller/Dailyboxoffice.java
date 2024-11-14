@@ -26,14 +26,18 @@ public class Dailyboxoffice {
     private String key;
     @Value("${TMDB_ACCESS_TOKEN}")
     private String tm_key2;
-    private String url = "http://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.xml";
+    private String daily = "http://kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.xml";
     private String url2 = "https://api.themoviedb.org/3/movie";
     private String img_url = "https://image.tmdb.org/t/p/original";
     private String Dt = "20241112";
     @GetMapping("/kobis")
-    public void find() {
-        System.out.printf("%s?key=%s&targetDt=%s",url,key,Dt);
+    public void find() throws IOException, InterruptedException {
+//        System.out.printf("%s?key=%s&targetDt=%s",url,key,Dt);
         System.out.println();
+
+
+
+
     }
 
 
