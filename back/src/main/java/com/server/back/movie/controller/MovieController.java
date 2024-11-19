@@ -50,7 +50,7 @@ public class MovieController {
 //        movieService.searchNameMovie(movieName);
 //    }
 
-    @GetMapping("/searchNameMovie")
+    @GetMapping("/searchNameMovie") 
     public void searchNameMovie(String title) {
         String movieTitle = URLEncoder.encode(title, StandardCharsets.UTF_8);
         movieService.searchNameMovie(movieTitle);
