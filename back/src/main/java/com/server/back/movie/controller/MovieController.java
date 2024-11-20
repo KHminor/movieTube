@@ -1,16 +1,14 @@
 package com.server.back.movie.controller;
 
+import com.server.back.movie.dto.ReqBoxOffice;
 import com.server.back.movie.service.MovieService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.text.DateFormat;
 import java.util.List;
 import java.util.Map;
 import java.time.*;
@@ -36,12 +34,13 @@ public class MovieController {
     }
 
 
-    @GetMapping("/daily")
-    public void getDailyMovies() {
+    @GetMapping("/boxOffice")
+    public List<ReqBoxOffice> getBoxOffice() {
 
         String nowDate = String.valueOf(LocalDate.now().minusDays(1)).replaceAll("-","");
         System.out.println(nowDate);
-        movieService.getDailyMovies(nowDate);
+//        movieService.getBoxOffice("20140401");
+        return movieService.getBoxOffice(nowDate);
     }
 
 

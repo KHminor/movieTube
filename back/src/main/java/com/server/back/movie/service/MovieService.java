@@ -1,20 +1,27 @@
 package com.server.back.movie.service;
 
-import com.server.back.movie.controller.MovieController;
+import com.server.back.movie.dto.ReqBoxOffice;
+import com.server.back.movie.entity.BoxOfficeEntity;
+import com.server.back.movie.repository.BoxOfficeRepository;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.PostConstruct;
-import java.net.http.HttpRequest;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class MovieService {
     private final WebClient.Builder webClientBuilder;
+    private final BoxOfficeRepository boxOfficeRepository;
+    private final Map<String,Integer> roma_dic;
     @Getter
     private WebClient wcKobis;
     @Getter
@@ -27,8 +34,20 @@ public class MovieService {
 
     private String img_url = "https://image.tmdb.org/t/p/original";
 
-    public MovieService(WebClient.Builder webClientBuilder) {
+    public MovieService(WebClient.Builder webClientBuilder, BoxOfficeRepository boxOfficeRepository) {
         this.webClientBuilder = webClientBuilder;
+        this.boxOfficeRepository = boxOfficeRepository;
+        this.roma_dic = new HashMap<>();
+        roma_dic.put("Ⅰ", 1);
+        roma_dic.put("Ⅱ", 2);
+        roma_dic.put("Ⅲ", 3);
+        roma_dic.put("Ⅳ", 4);
+        roma_dic.put("Ⅴ", 5);
+        roma_dic.put("Ⅵ", 6);
+        roma_dic.put("Ⅶ", 7);
+        roma_dic.put("Ⅷ", 8);
+        roma_dic.put("Ⅸ", 9);
+        roma_dic.put("Ⅹ", 10);
     }
 
     @PostConstruct
@@ -51,32 +70,98 @@ public class MovieService {
                 .bodyToMono(Map.class);
     }
 
-    public void getDailyMovies(String nowDate) {
+    public List<ReqBoxOffice> getBoxOffice(String nowDate) {
         System.out.println(tmdbAccessToken);
-        Mono<Map> result = getWcKobis().get()
+
+        // 1. Kobis API 요청 및 응답 처리
+        Map response = getWcKobis().get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/boxoffice/searchDailyBoxOfficeList.json")
-                        .queryParam("key",kobiesKey)
-                        .queryParam("targetDt",nowDate)
+                        .queryParam("key", kobiesKey)
+                        .queryParam("targetDt", nowDate)
                         .build())
                 .retrieve()
-                .bodyToMono(Map.class);
+                .bodyToMono(Map.class)
+                .block(); // 동기 방식으로 결과를 기다림
 
-        result.subscribe(r-> {
-           Map<String, Object> dailyBoxOfficeList = (Map<String,Object>) r.get("boxOfficeResult");
-           System.out.println(dailyBoxOfficeList);
-           if (dailyBoxOfficeList!=null) {
-               List<Map<String,String>> movieList = (List<Map<String,String>>)dailyBoxOfficeList.get("dailyBoxOfficeList");
-               for (Map<String,String> movie: movieList) {
-                   searchNameMovie(movie.get("movieNm")).subscribe(s->{
-                       Map<String,Object> searchMovie = ((List<Map<String,Object>>)s.get("results")).get(0);
-                       System.out.printf("id: %s",searchMovie.get("id")+"\n");
-                       System.out.printf("제목: %s",searchMovie.get("original_title")+"\n");
-                       System.out.println(img_url+searchMovie.get("poster_path"));
-                   });
-               }
-           }
-        });
+        // 2. dailyBoxOfficeList 추출
+        Map<String, Object> dailyBoxOfficeList = (Map<String, Object>) response.get("boxOfficeResult");
+        if (dailyBoxOfficeList == null) {
+            throw new RuntimeException("Failed to retrieve daily box office list");
+        }
+
+        List<Map<String, String>> movieList = (List<Map<String, String>>) dailyBoxOfficeList.get("dailyBoxOfficeList");
+
+        List<BoxOfficeEntity> officeEntityList = new ArrayList<>();
+
+        // 3. 각 영화에 대해 TMDB API 호출 및 처리
+        for (Map<String, String> movie : movieList) {
+            Map<String, Object> searchResponse = searchNameMovie(movie.get("movieNm")).block(); // 동기 방식으로 결과를 기다림
+
+            List<Map<String, Object>> results = (List<Map<String, Object>>) searchResponse.get("results");
+            if (results == null || results.isEmpty()) {
+                String movieNm = movie.get("movieNm");
+                int idx = movieNm.length();
+                if (roma_dic.containsKey(String.valueOf(movieNm.charAt(idx-1)))) { // 로마 숫자 판별
+                    movieNm = movieNm.substring(0,idx-1)+roma_dic.get(String.valueOf(movieNm.charAt(idx-1)));
+                    searchResponse = searchNameMovie(movieNm).block();
+                    results = (List<Map<String, Object>>) searchResponse.get("results");
+                } else {
+                    boolean state = true;
+                    for (int i=idx-1; i>=0; i--) {
+                        if (String.valueOf(movieNm.charAt(i)).matches("\\d")) idx=i;
+                        else {
+                            if (idx!=i) {
+                                movieNm = movieNm.substring(0,idx)+" "+movieNm.substring(idx);
+                                searchResponse = searchNameMovie(movieNm).block();
+                                results = (List<Map<String, Object>>) searchResponse.get("results");
+                            }
+                            else {
+                                System.out.println("No search results found for movie: " + movieNm);
+                                state = false;
+                            }
+                            break;
+                        }
+                    }
+                    if (!state) continue;
+                }
+            }
+            if (results!=null&&!results.isEmpty()) {
+                Map<String, Object> searchMovie = results.get(0); // 첫 번째 결과 사용
+                BoxOfficeEntity boxOfficeEntity = BoxOfficeEntity.builder()
+                        .tmRank(movie.get("rank"))
+                        .kMovieCd(movie.get("movieCd"))
+                        .movieNm(movie.get("movieNm"))
+                        .openDt(movie.get("openDt"))
+                        .audiAcc(movie.get("audiAcc"))
+                        .rankOldAndNew(movie.get("rankOldAndNew"))
+                        .tmId((int) searchMovie.get("id"))
+                        .overView((String) searchMovie.get("overview"))
+                        .posterPath(img_url + searchMovie.get("poster_path"))
+                        .backdropPath(img_url + searchMovie.get("backdrop_path"))
+                        .build();
+                officeEntityList.add(boxOfficeEntity);
+            }
+        }
+
+        // 4. 데이터 저장
+        List<BoxOfficeEntity> savedEntities = boxOfficeRepository.saveAll(officeEntityList);
+
+        // 5. 반환 데이터 변환
+        return savedEntities.stream()
+                .map(movie -> ReqBoxOffice.builder()
+                        .tmRank(movie.getTmRank())
+                        .kMovieCd(movie.getKMovieCd())
+                        .movieNm(movie.getMovieNm())
+                        .openDt(movie.getOpenDt())
+                        .audiAcc(movie.getAudiAcc())
+                        .rankOldAndNew(movie.getRankOldAndNew())
+                        .tmId(movie.getTmId())
+                        .overView(movie.getOverView())
+                        .posterPath(movie.getPosterPath())
+                        .backdropPath(movie.getBackdropPath())
+                        .build())
+                .collect(Collectors.toList());
     }
 
     // 우선은 가장 상단에 있는 영화 return
