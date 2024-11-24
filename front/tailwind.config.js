@@ -11,8 +11,14 @@ module.exports = {
   plugins: [
     ({ addUtilities }) => {
       addUtilities({
+        '.f-c-s': {
+          '@apply flex justify-center items-start': '',
+        },
         '.f-c-c': {
           '@apply flex justify-center items-center': '',
+        },
+        '.f-b-s': {
+          '@apply flex justify-between items-start': '',
         },
         '.f-b-c': {
           '@apply flex justify-between items-center': '',
