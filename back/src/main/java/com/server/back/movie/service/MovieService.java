@@ -4,13 +4,16 @@ import com.server.back.movie.dto.ReqBoxOffice;
 import com.server.back.movie.entity.BoxOfficeEntity;
 import com.server.back.movie.repository.BoxOfficeRepository;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.PropertySource;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.PostConstruct;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,6 +21,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+@PropertySource("classpath:config.properties")
 public class MovieService {
     private final WebClient.Builder webClientBuilder;
     private final BoxOfficeRepository boxOfficeRepository;
@@ -52,7 +56,19 @@ public class MovieService {
 
     @PostConstruct
     public void init() {
-        this.wcKobis = webClientBuilder.baseUrl("http://www.kobis.or.kr/kobisopenapi/webservice/rest").build();
+        this.wcKobis = webClientBuilder.baseUrl("http://www.kobis.or.kr/kobisopenapi/webservice/rest")
+                .filter((request, next)-> {
+                    URI originalUri = request.url();
+                    URI updateUri = UriComponentsBuilder.fromUri(originalUri)
+                            .queryParam("key", kobiesKey)
+                            .build(true)
+                            .toUri();
+                    ClientRequest updatedRequest = ClientRequest.from(request) // 수정된 URI로 요청 업데이트
+                            .url(updateUri)
+                            .build();
+                    return next.exchange(updatedRequest); // 업데이트된 요청을 다음 필터나 실제 호출로 전달
+                })
+                .build();
         this.wcTmdb = webClientBuilder.baseUrl("https://api.themoviedb.org/3")
                 .defaultHeader("accept", "application/json")
                 .defaultHeader("Authorization", "Bearer "+tmdbAccessToken)
@@ -63,7 +79,7 @@ public class MovieService {
         return getWcKobis().get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/movie/searchMovieList.json")
-                        .queryParam("key", kobiesKey)
+//                        .queryParam("key", kobiesKey)
                         .queryParam("itemPerPage", "10")
                         .build())
                 .retrieve()
@@ -71,13 +87,12 @@ public class MovieService {
     }
 
     public List<ReqBoxOffice> getBoxOffice(String nowDate) {
-        System.out.println(tmdbAccessToken);
 
         // 1. Kobis API 요청 및 응답 처리
         Map response = getWcKobis().get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/boxoffice/searchDailyBoxOfficeList.json")
-                        .queryParam("key", kobiesKey)
+//                        .queryParam("key", kobiesKey)
                         .queryParam("targetDt", nowDate)
                         .build())
                 .retrieve()
@@ -87,7 +102,7 @@ public class MovieService {
         // 2. dailyBoxOfficeList 추출
         Map<String, Object> dailyBoxOfficeList = (Map<String, Object>) response.get("boxOfficeResult");
         if (dailyBoxOfficeList == null) {
-            throw new RuntimeException("Failed to retrieve daily box office list");
+            throw new RuntimeException("박스오피스 데이터 조회 실패");
         }
 
         List<Map<String, String>> movieList = (List<Map<String, String>>) dailyBoxOfficeList.get("dailyBoxOfficeList");
@@ -96,7 +111,7 @@ public class MovieService {
 
         // 3. 각 영화에 대해 TMDB API 호출 및 처리
         for (Map<String, String> movie : movieList) {
-            Map<String, Object> searchResponse = searchNameMovie(movie.get("movieNm")).block(); // 동기 방식으로 결과를 기다림
+            Map<String, Object> searchResponse = searchNameTMMovie(movie.get("movieNm")).block(); // 동기 방식으로 결과를 기다림
 
             List<Map<String, Object>> results = (List<Map<String, Object>>) searchResponse.get("results");
             if (results == null || results.isEmpty()) {
@@ -104,7 +119,7 @@ public class MovieService {
                 int idx = movieNm.length();
                 if (roma_dic.containsKey(String.valueOf(movieNm.charAt(idx-1)))) { // 로마 숫자 판별
                     movieNm = movieNm.substring(0,idx-1)+roma_dic.get(String.valueOf(movieNm.charAt(idx-1)));
-                    searchResponse = searchNameMovie(movieNm).block();
+                    searchResponse = searchNameTMMovie(movieNm).block();
                     results = (List<Map<String, Object>>) searchResponse.get("results");
                 } else {
                     boolean state = true;
@@ -113,7 +128,7 @@ public class MovieService {
                         else {
                             if (idx!=i) {
                                 movieNm = movieNm.substring(0,idx)+" "+movieNm.substring(idx);
-                                searchResponse = searchNameMovie(movieNm).block();
+                                searchResponse = searchNameTMMovie(movieNm).block();
                                 results = (List<Map<String, Object>>) searchResponse.get("results");
                             }
                             else {
@@ -165,7 +180,7 @@ public class MovieService {
     }
 
     // 우선은 가장 상단에 있는 영화 return
-    public Mono<Map> searchNameMovie(String movieName) {
+    public Mono<Map> searchNameTMMovie(String movieName) {
         return getWcTmdb().get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/search/movie")
@@ -177,6 +192,26 @@ public class MovieService {
                 )
                 .retrieve()
                 .bodyToMono(Map.class);
+    }
+
+
+    // kobis에서 영화 제목으로 찾기
+    public void searchNameKobisMovie(String movieName) {
+        int maxRow = 40;
+        Map response = getWcKobis().get()
+                .uri(uriBuilder-> uriBuilder
+                        .path("/movie/searchMovieList.json")
+                        .queryParam("itemPerPage",maxRow) // 우선은 최대 40개 정도 조회하기
+                        .queryParam("movieNm",movieName)
+                        .build()
+                ).retrieve()
+                .bodyToMono(Map.class)
+                .block();
+
+        Map<String, Object> searchMovieList = (Map<String,Object>)response.get("movieListResult");
+        if (searchMovieList!=null) throw new RuntimeException("검색한 영화의 데이터 조회 실패");
+
+        
     }
 }
 

@@ -1,6 +1,7 @@
 package com.server.back.movie.controller;
 
 import com.server.back.movie.dto.ReqBoxOffice;
+import com.server.back.movie.dto.ResSearchMovieName;
 import com.server.back.movie.service.MovieService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,9 +50,15 @@ public class MovieController {
 //        movieService.searchNameMovie(movieName);
 //    }
 
-    @GetMapping("/searchNameMovie") 
-    public void searchNameMovie(String title) {
+    // TMDB만
+    @GetMapping("/searchNameTMMovie")
+    public void searchNameTMMovie(String title) {
         String movieTitle = URLEncoder.encode(title, StandardCharsets.UTF_8);
-        movieService.searchNameMovie(movieTitle);
+        movieService.searchNameTMMovie(movieTitle);
+    }
+
+    @GetMapping("/searchNameKobisMovie")
+    public void searchNameKobisMovie(ResSearchMovieName movieName) {
+        movieService.searchNameKobisMovie(movieName.getMovieNm());
     }
 }
